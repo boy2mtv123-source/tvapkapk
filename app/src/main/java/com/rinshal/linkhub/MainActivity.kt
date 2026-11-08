@@ -1,7 +1,6 @@
 package com.rinshal.linkhub
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Bitmap
@@ -12,10 +11,8 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.net.Uri
 import android.os.Bundle
-import android.text.InputType
 import android.view.Gravity
 import android.view.View
-import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.ImageView
@@ -23,10 +20,13 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+
+// The link list is read from this file in your GitHub repo.
+private const val LIST_URL =
+    "https://raw.githubusercontent.com/boy2mtv123-source/tvapkapk/main/links.json"
 
 private val LIME = 0xFFC6F135.toInt()
 private val MUTED = 0xFFC8C8C8.toInt()
@@ -36,14 +36,14 @@ private const val COLS = 5
 class MainActivity : Activity() {
     data class Link(val name: String, val url: String)
 
-    private val links = mutableListOf<Link>()
+    private var links: List<Link> = emptyList()
     private lateinit var grid: GridLayout
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        load()
+        links = loadCache()
 
         val frame = FrameLayout(this)
 
@@ -68,7 +68,7 @@ class MainActivity : Activity() {
         root.addView(title)
 
         val hint = TextView(this)
-        hint.text = "OK: open   |   Hold OK: open in app / edit / delete"
+        hint.text = "OK: open   |   Hold OK: open inside app"
         hint.textSize = 13f
         hint.setTextColor(MUTED)
         hint.setPadding(0, dp(4), 0, dp(20))
@@ -83,6 +83,64 @@ class MainActivity : Activity() {
         frame.addView(root, FrameLayout.LayoutParams(-1, -1))
         setContentView(frame)
         render(0)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refresh()
+    }
+
+    // Download links.json in the background; update the screen only if it changed.
+    private fun refresh() {
+        Thread {
+            try {
+                val c = URL("$LIST_URL?t=${System.currentTimeMillis()}")
+                    .openConnection() as HttpURLConnection
+                c.connectTimeout = 8000
+                c.readTimeout = 8000
+                val text = c.inputStream.use { it.readBytes() }.toString(Charsets.UTF_8)
+                val parsed = parse(text)
+                if (parsed.isNotEmpty()) {
+                    runOnUiThread {
+                        if (!isFinishing && parsed != links) {
+                            links = parsed
+                            getSharedPreferences("links", MODE_PRIVATE)
+                                .edit().putString("json", text).apply()
+                            render(0)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // offline or bad JSON: keep showing the saved list
+            }
+        }.start()
+    }
+
+    private fun parse(text: String): List<Link> {
+        val out = mutableListOf<Link>()
+        val a = JSONArray(text)
+        for (i in 0 until a.length()) {
+            val o = a.getJSONObject(i)
+            val u = o.optString("url").trim()
+            if (u.isNotEmpty()) out.add(Link(o.optString("name").trim().ifEmpty { u }, u))
+        }
+        return out
+    }
+
+    private fun loadCache(): List<Link> {
+        val s = getSharedPreferences("links", MODE_PRIVATE).getString("json", null)
+        if (s != null) {
+            try {
+                val p = parse(s)
+                if (p.isNotEmpty()) return p
+            } catch (e: Exception) {
+            }
+        }
+        return listOf(
+            Link("YouTube", "youtube.com"),
+            Link("Google", "google.com"),
+            Link("Wikipedia", "wikipedia.org")
+        )
     }
 
     private fun fix(u: String) =
@@ -104,15 +162,14 @@ class MainActivity : Activity() {
         grid.removeAllViews()
         for (i in links.indices) {
             val l = links[i]
-            grid.addView(tile(l.name.take(1).uppercase(), l.name, l.url, { open(l) }, { options(i) }))
+            grid.addView(tile(l.name.take(1).uppercase(), l.name, l.url, { open(l) }, { openInApp(l) }))
         }
-        grid.addView(tile("+", "Add link", null, { edit(-1) }, null))
         grid.getChildAt(focus.coerceIn(0, grid.childCount - 1))?.requestFocus()
     }
 
     private fun tile(
-        icon: String, label: String, url: String?,
-        click: () -> Unit, longClick: (() -> Unit)?
+        icon: String, label: String, url: String,
+        click: () -> Unit, longClick: () -> Unit
     ): View {
         val t = LinearLayout(this)
         t.orientation = LinearLayout.VERTICAL
@@ -121,7 +178,7 @@ class MainActivity : Activity() {
         t.isClickable = true
         t.background = tileBg()
         t.setOnClickListener { click() }
-        if (longClick != null) t.setOnLongClickListener { longClick(); true }
+        t.setOnLongClickListener { longClick(); true }
 
         val box = FrameLayout(this)
         val letter = TextView(this)
@@ -139,7 +196,7 @@ class MainActivity : Activity() {
         box.addView(img, FrameLayout.LayoutParams(-1, -1))
 
         t.addView(box, LinearLayout.LayoutParams(dp(44), dp(44)))
-        if (url != null) loadFavicon(url, img, letter)
+        loadFavicon(url, img, letter)
 
         val tv = TextView(this)
         tv.text = label
@@ -204,70 +261,5 @@ class MainActivity : Activity() {
         s.addState(intArrayOf(android.R.attr.state_pressed), shape(0xCC232323.toInt(), LIME, 3))
         s.addState(intArrayOf(), shape(0xB3101010.toInt(), 0x33FFFFFF, 1))
         return s
-    }
-
-    private fun options(i: Int) {
-        AlertDialog.Builder(this)
-            .setTitle(links[i].name)
-            .setItems(arrayOf("Open inside app", "Edit", "Delete")) { _, which ->
-                when (which) {
-                    0 -> openInApp(links[i])
-                    1 -> edit(i)
-                    2 -> { links.removeAt(i); save(); render(i) }
-                }
-            }.show()
-    }
-
-    private fun edit(i: Int) {
-        val box = LinearLayout(this)
-        box.orientation = LinearLayout.VERTICAL
-        box.setPadding(dp(24), dp(8), dp(24), 0)
-
-        val name = EditText(this)
-        name.hint = "Name"
-        name.inputType = InputType.TYPE_CLASS_TEXT
-        val url = EditText(this)
-        url.hint = "URL (e.g. youtube.com)"
-        url.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        if (i >= 0) { name.setText(links[i].name); url.setText(links[i].url) }
-        box.addView(name)
-        box.addView(url)
-
-        AlertDialog.Builder(this)
-            .setTitle(if (i >= 0) "Edit link" else "Add link")
-            .setView(box)
-            .setPositiveButton("Save") { _, _ ->
-                val n = name.text.toString().trim()
-                val u = url.text.toString().trim()
-                if (u.isNotEmpty()) {
-                    val l = Link(if (n.isEmpty()) u else n, u)
-                    if (i >= 0) { links[i] = l; save(); render(i) }
-                    else { links.add(l); save(); render(links.size - 1) }
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun load() {
-        links.clear()
-        val s = getSharedPreferences("links", MODE_PRIVATE).getString("v", null)
-        if (s == null) {
-            links.add(Link("YouTube", "youtube.com"))
-            links.add(Link("Google", "google.com"))
-            links.add(Link("Wikipedia", "wikipedia.org"))
-        } else {
-            val a = JSONArray(s)
-            for (k in 0 until a.length()) {
-                val o = a.getJSONObject(k)
-                links.add(Link(o.getString("n"), o.getString("u")))
-            }
-        }
-    }
-
-    private fun save() {
-        val a = JSONArray()
-        for (l in links) a.put(JSONObject().put("n", l.name).put("u", l.url))
-        getSharedPreferences("links", MODE_PRIVATE).edit().putString("v", a.toString()).apply()
     }
 }
