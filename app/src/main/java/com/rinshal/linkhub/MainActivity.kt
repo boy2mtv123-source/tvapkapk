@@ -18,6 +18,7 @@ import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.TextClock
 import android.widget.TextView
 import org.json.JSONArray
 import java.io.File
@@ -60,19 +61,21 @@ class MainActivity : Activity() {
         root.orientation = LinearLayout.VERTICAL
         root.setPadding(dp(48), dp(32), dp(48), dp(24))
 
-        val title = TextView(this)
-        title.text = "Link Hub"
-        title.textSize = 28f
-        title.setTextColor(Color.WHITE)
-        title.typeface = Typeface.DEFAULT_BOLD
-        root.addView(title)
+        val time = TextClock(this)
+        time.format12Hour = "hh:mm a"
+        time.format24Hour = "HH:mm"
+        time.textSize = 56f
+        time.setTextColor(Color.WHITE)
+        time.typeface = Typeface.DEFAULT_BOLD
+        root.addView(time)
 
-        val hint = TextView(this)
-        hint.text = "OK: open   |   Hold OK: open inside app"
-        hint.textSize = 13f
-        hint.setTextColor(MUTED)
-        hint.setPadding(0, dp(4), 0, dp(20))
-        root.addView(hint)
+        val date = TextClock(this)
+        date.format12Hour = "EEEE, dd MMMM yyyy"
+        date.format24Hour = "EEEE, dd MMMM yyyy"
+        date.textSize = 18f
+        date.setTextColor(MUTED)
+        date.setPadding(0, 0, 0, dp(24))
+        root.addView(date)
 
         grid = GridLayout(this)
         grid.columnCount = COLS
@@ -183,7 +186,7 @@ class MainActivity : Activity() {
         val box = FrameLayout(this)
         val letter = TextView(this)
         letter.text = icon
-        letter.textSize = 34f
+        letter.textSize = 40f
         letter.setTextColor(LIME)
         letter.typeface = Typeface.DEFAULT_BOLD
         letter.gravity = Gravity.CENTER
@@ -195,17 +198,9 @@ class MainActivity : Activity() {
         img.background = shape(0xFFF2F2F2.toInt(), 0x00000000, 0, 10)
         box.addView(img, FrameLayout.LayoutParams(-1, -1))
 
-        t.addView(box, LinearLayout.LayoutParams(dp(44), dp(44)))
+        t.addView(box, LinearLayout.LayoutParams(dp(56), dp(56)))
+        t.contentDescription = label
         loadFavicon(url, img, letter)
-
-        val tv = TextView(this)
-        tv.text = label
-        tv.textSize = 15f
-        tv.setTextColor(Color.WHITE)
-        tv.gravity = Gravity.CENTER
-        tv.maxLines = 1
-        tv.setPadding(dp(8), dp(6), dp(8), 0)
-        t.addView(tv)
 
         val lp = GridLayout.LayoutParams()
         lp.width = dp(150)
