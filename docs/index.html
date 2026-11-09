@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Link Hub</title>
+<style>
+  :root { --lime: #C6F135; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; color: #fff;
+    font-family: Roboto, Arial, sans-serif; }
+
+  /* wallpaper + 30% black dim layer */
+  #bg { position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: #000 url(wallpaper.jpg) center / cover no-repeat; }
+  #dim { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.3); }
+
+  #app { position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    padding: 3.3vw 5vw 2.5vw; display: flex; flex-direction: column; }
+  #time { font-size: 5.8vw; font-weight: 700; line-height: 1.1; }
+  #date { font-size: 1.9vw; color: #C8C8C8; margin: 0.4vw 0 2.2vw; }
+
+  #grid { flex: 1; overflow-y: auto; display: flex; flex-wrap: wrap;
+    align-content: flex-start; align-items: flex-start; padding: 0.6vw; }
+  #grid::-webkit-scrollbar { display: none; }
+
+  .tile { position: relative; width: 15.6vw; height: 10.4vw; margin: 0.85vw;
+    border-radius: 1.25vw; background: rgba(16, 16, 16, 0.7);
+    border: 0.1vw solid rgba(255, 255, 255, 0.2);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.12s, background 0.12s, border-color 0.12s; }
+  .tile.poster { width: 12.5vw; height: 16.7vw; }
+  .tile.focus { background: rgba(35, 35, 35, 0.8); border: 0.31vw solid var(--lime);
+    transform: scale(1.04); }
+
+  .ic { position: relative; width: 5.8vw; height: 5.8vw; }
+  .ltr { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 4.2vw; font-weight: 700; color: var(--lime); }
+  .fav { position: absolute; top: 0; left: 0; width: 100%; height: 100%; padding: 0.6vw;
+    background: #F2F2F2; border-radius: 1vw; object-fit: contain; display: none; }
+  .pos { position: absolute; top: 0.3vw; left: 0.3vw; right: 0.3vw; bottom: 0.3vw;
+    width: calc(100% - 0.6vw); height: calc(100% - 0.6vw);
+    object-fit: cover; border-radius: 1vw; display: none; }
+</style>
+</head>
+<body>
+<div id="bg"></div>
+<div id="dim"></div>
+<div id="app">
+  <div id="time"></div>
+  <div id="date"></div>
+  <div id="grid"></div>
+</div>
+
+<script>
+(function () {
+  var CLOCK_24H = false;           // set true for 24-hour time
+  var LIST_URL = 'links.json';
+  var DEFAULTS = [
+    { name: 'YouTube', url: 'youtube.com', imgsrc: '' },
+    { name: 'Google', url: 'google.com', imgsrc: '' },
+    { name: 'Wikipedia', url: 'wikipedia.org', imgsrc: '' }
+  ];
+
+  var bridge = window.LinkHub || null;   // provided by the Android app
+  var grid = document.getElementById('grid');
+  var links = [], tiles = [], idx = 0, lastJson = '';
+
+  try { idx = parseInt(sessionStorage.getItem('lh_idx') || '0', 10) || 0; } catch (e) {}
+
+  /* ---------- clock ---------- */
+  var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+                'August', 'September', 'October', 'November', 'December'];
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function tick() {
+    var d = new Date(), h = d.getHours(), m = d.getMinutes(), t;
+    if (CLOCK_24H) { t = pad(h) + ':' + pad(m); }
+    else { var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12; t = pad(h) + ':' + pad(m) + ' ' + ap; }
+    document.getElementById('time').textContent = t;
+    document.getElementById('date').textContent =
+      DAYS[d.getDay()] + ', ' + pad(d.getDate()) + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear();
+  }
+  tick(); setInterval(tick, 5000);
+
+  /* ---------- links ---------- */
+  function fixUrl(u) { return /^https?:\/\//i.test(u) ? u : 'https://' + u; }
+  function hostOf(u) { var a = document.createElement('a'); a.href = fixUrl(u); return a.hostname; }
+
+  function parse(text) {
+    var clean = text.replace(/^\uFEFF/, '').replace(/,\s*([\]}])/g, '$1');   // forgives trailing commas
+    var arr = JSON.parse(clean), out = [];
+    if (!(arr instanceof Array)) return out;
+    arr.forEach(function (o) {
+      if (o && typeof o === 'object') {
+        var u = String(o.url || '').trim();
+        if (u) out.push({ name: String(o.name || '').trim() || u, url: u, imgsrc: String(o.imgsrc || '').trim() });
+      }
+    });
+    return out;
+  }
+
+  function makeTile(l, i) {
+    var t = document.createElement('div');
+    t.className = 'tile' + (l.imgsrc ? ' poster' : '');
+    t.setAttribute('aria-label', l.name);
+
+    var ic = document.createElement('div'); ic.className = 'ic';
+    var ltr = document.createElement('div'); ltr.className = 'ltr';
+    ltr.textContent = l.name.charAt(0).toUpperCase();
+    var fav = document.createElement('img'); fav.className = 'fav';
+    fav.setAttribute('referrerpolicy', 'no-referrer');
+    fav.onload = function () { fav.style.display = 'block'; ltr.style.display = 'none'; };
+    fav.src = 'https://www.google.com/s2/favicons?domain=' + encodeURIComponent(hostOf(l.url)) + '&sz=128';
+    ic.appendChild(ltr); ic.appendChild(fav); t.appendChild(ic);
+
+    if (l.imgsrc) {
+      var p = document.createElement('img'); p.className = 'pos';
+      p.setAttribute('referrerpolicy', 'no-referrer');
+      p.onload = function () { p.style.display = 'block'; };
+      p.src = l.imgsrc;
+      t.appendChild(p);
+    }
+    t.onclick = function () { setFocus(i, false); openLink(l); };
+    return t;
+  }
+
+  function render() {
+    grid.innerHTML = ''; tiles = [];
+    links.forEach(function (l, i) { var t = makeTile(l, i); grid.appendChild(t); tiles.push(t); });
+    if (idx >= tiles.length) idx = tiles.length - 1;
+    if (idx < 0) idx = 0;
+    setFocus(idx, false);
+  }
+
+  function setFocus(i, scroll) {
+    if (!tiles.length) return;
+    if (tiles[idx]) tiles[idx].className = tiles[idx].className.replace(' focus', '');
+    idx = i;
+    tiles[idx].className += ' focus';
+    try { sessionStorage.setItem('lh_idx', String(idx)); } catch (e) {}
+    if (scroll) {
+      var r = tiles[idx].getBoundingClientRect(), g = grid.getBoundingClientRect();
+      if (r.bottom > g.bottom - 10) grid.scrollTop += r.bottom - g.bottom + 30;
+      if (r.top < g.top + 10) grid.scrollTop -= g.top - r.top + 30;
+    }
+  }
+
+  function center(el) { var r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
+
+  function move(dir) {
+    if (!tiles.length) return;
+    var c = center(tiles[idx]), best = -1, bs = 1e9;
+    for (var i = 0; i < tiles.length; i++) {
+      if (i === idx) continue;
+      var p = center(tiles[i]), dx = p.x - c.x, dy = p.y - c.y, main, cross;
+      if (dir === 'left')       { if (dx > -2) continue; main = -dx; cross = Math.abs(dy); }
+      else if (dir === 'right') { if (dx < 2) continue;  main = dx;  cross = Math.abs(dy); }
+      else if (dir === 'up')    { if (dy > -2) continue; main = -dy; cross = Math.abs(dx); }
+      else                      { if (dy < 2) continue;  main = dy;  cross = Math.abs(dx); }
+      var s = main + cross * 3;
+      if (s < bs) { bs = s; best = i; }
+    }
+    if (best >= 0) setFocus(best, true);
+  }
+
+  /* ---------- opening links ---------- */
+  function openLink(l) {
+    if (!l) return;
+    var u = fixUrl(l.url);
+    if (bridge && bridge.open) bridge.open(u); else window.open(u, '_blank');
+  }
+  function openInApp(l) {
+    if (!l) return;
+    var u = fixUrl(l.url);
+    if (bridge && bridge.openInApp) bridge.openInApp(u); else window.location.href = u;
+  }
+
+  /* ---------- remote control ---------- */
+  var holdTimer = null, held = false, armed = false;
+  function isOk(e) { return e.key === 'Enter' || e.keyCode === 13 || e.keyCode === 23; }
+
+  document.addEventListener('keydown', function (e) {
+    var k = e.keyCode;
+    if (e.key === 'ArrowLeft' || k === 37)       { move('left');  e.preventDefault(); }
+    else if (e.key === 'ArrowRight' || k === 39) { move('right'); e.preventDefault(); }
+    else if (e.key === 'ArrowUp' || k === 38)    { move('up');    e.preventDefault(); }
+    else if (e.key === 'ArrowDown' || k === 40)  { move('down');  e.preventDefault(); }
+    else if (isOk(e)) {
+      e.preventDefault();
+      if (e.repeat) return;
+      armed = true; held = false;
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(function () { held = true; openInApp(links[idx]); }, 650);
+    }
+  });
+  document.addEventListener('keyup', function (e) {
+    if (!isOk(e)) return;
+    e.preventDefault();
+    clearTimeout(holdTimer);
+    if (!armed) return;            // ignore the leftover key-up from launching the app
+    armed = false;
+    if (!held) openLink(links[idx]);
+    held = false;
+  });
+
+  /* ---------- load + refresh the list ---------- */
+  function load() {
+    fetch(LIST_URL + '?t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('http'); return r.text(); })
+      .then(function (text) {
+        var p = parse(text);
+        if (!p.length) return;
+        var j = JSON.stringify(p);
+        if (j === lastJson) return;
+        lastJson = j; links = p;
+        try { localStorage.setItem('lh_links', j); } catch (e) {}
+        render();
+      })
+      .catch(function () { /* offline or bad file: keep what is shown */ });
+  }
+
+  var saved = null;
+  try { saved = JSON.parse(localStorage.getItem('lh_links') || 'null'); } catch (e) {}
+  links = (saved instanceof Array && saved.length) ? saved : DEFAULTS;
+  lastJson = JSON.stringify(links);
+  render();
+  load();
+
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) load(); });
+  window.addEventListener('focus', load);
+  setInterval(load, 120000);
+})();
+</script>
+</body>
+</html>

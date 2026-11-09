@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; background: #0D0D0D; color: #fff; font-family: Roboto, Arial, sans-serif; }
+  .w { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 6vw; }
+  h1 { font-size: 3.2vw; margin: 0 0 1.5vw; }
+  p { font-size: 1.8vw; color: #C8C8C8; margin: 0.5vw 0; word-break: break-all; }
+</style>
+</head>
+<body>
+<div class="w">
+  <h1 id="t">Can't load Link Hub</h1>
+  <p id="m">Check the TV's internet connection. Trying again automatically.</p>
+  <p id="u"></p>
+</div>
+<script>
+  var b = window.LinkHub;
+  if (b) {
+    var url = b.siteUrl();
+    document.getElementById('u').textContent = url;
+    if (url.indexOf('your-site-link-here') > -1) {
+      document.getElementById('t').textContent = 'Site link not set yet';
+      document.getElementById('m').textContent = 'Put your website link in SITE_URL inside MainActivity.kt and build again.';
+    } else {
+      setInterval(function () { b.retry(); }, 8000);
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.keyCode === 13 || e.keyCode === 23) b.retry();
+      });
+    }
+  }
+</script>
+</body>
+</html>
