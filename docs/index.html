@@ -42,6 +42,11 @@
   .pos { position: absolute; top: 0.3vw; left: 0.3vw; right: 0.3vw; bottom: 0.3vw;
     width: calc(100% - 0.6vw); height: calc(100% - 0.6vw);
     object-fit: cover; border-radius: 1vw; display: none; }
+  .tile-name { position: absolute; left: 0.5vw; right: 0.5vw; bottom: 0.7vw;
+    text-align: center; font-size: 0.9vw; line-height: 1.15; color: #fff;
+    text-shadow: 0 0.15vw 0.4vw rgba(0, 0, 0, 0.7); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+  .tile.poster .tile-name { font-size: 1vw; }
 </style>
 </head>
 <body>
@@ -122,6 +127,12 @@
       p.src = l.imgsrc;
       t.appendChild(p);
     }
+
+    var label = document.createElement('div');
+    label.className = 'tile-name';
+    label.textContent = l.name;
+    t.appendChild(label);
+
     t.onclick = function () { setFocus(i, false); openLink(l); };
     return t;
   }
