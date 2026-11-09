@@ -14,7 +14,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 
 // >>> CHANGE THIS to your hosted website link (keep the https:// and the trailing /) <<<
-private const val SITE_URL = "https://your-site-link-here.invalid/"
+private const val SITE_URL = "https://boy2mtv123-source.github.io/tvapkapk/"
 
 private const val OFFLINE_URL = "file:///android_asset/offline.html"
 private const val RELOAD_AFTER_MS = 10 * 60 * 1000L
