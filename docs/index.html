@@ -24,12 +24,14 @@
     align-content: flex-start; align-items: flex-start; padding: 0.6vw; }
   #grid::-webkit-scrollbar { display: none; }
 
-  .tile { position: relative; width: 15.6vw; height: 10.4vw; margin: 0.85vw;
+  .tile-wrap { width: 15.6vw; margin: 0.85vw; text-align: center; }
+  .tile { position: relative; width: 100%; height: 10.4vw;
     border-radius: 1.25vw; background: rgba(16, 16, 16, 0.7);
     border: 0.1vw solid rgba(255, 255, 255, 0.2);
     display: flex; align-items: center; justify-content: center;
     transition: transform 0.12s, background 0.12s, border-color 0.12s; }
-  .tile.poster { width: 12.5vw; height: 16.7vw; }
+  .tile-wrap.poster { width: 12.5vw; }
+  .tile-wrap.poster .tile { height: 16.7vw; }
   .tile.focus { background: rgba(35, 35, 35, 0.8); border: 0.31vw solid var(--lime);
     transform: scale(1.04); }
 
@@ -42,14 +44,9 @@
   .pos { position: absolute; top: 0.3vw; left: 0.3vw; right: 0.3vw; bottom: 0.3vw;
     width: calc(100% - 0.6vw); height: calc(100% - 0.6vw);
     object-fit: cover; border-radius: 1vw; display: none; }
-  .tile::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0;
-    height: 18%; background: linear-gradient(to top, rgba(0, 0, 0, 0.72), transparent);
-    border-radius: 0 0 1.15vw 1.15vw; pointer-events: none; }
-  .tile-name { position: absolute; z-index: 1; left: 0.5vw; right: 0.5vw; bottom: 0.7vw;
-    text-align: center; font-size: 0.9vw; line-height: 1.15; color: #fff;
-    text-shadow: 0 0.15vw 0.4vw rgba(0, 0, 0, 0.7); white-space: nowrap;
-    overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
-  .tile.poster .tile-name { font-size: 1vw; }
+  .tile-name { margin-top: 0.45vw; font-size: 0.9vw; line-height: 1.2; color: #fff;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+  .tile-wrap.poster .tile-name { font-size: 1vw; }
 </style>
 </head>
 <body>
@@ -110,9 +107,12 @@
   }
 
   function makeTile(l, i) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tile-wrap' + (l.imgsrc ? ' poster' : '');
+    wrap.setAttribute('aria-label', l.name);
+
     var t = document.createElement('div');
-    t.className = 'tile' + (l.imgsrc ? ' poster' : '');
-    t.setAttribute('aria-label', l.name);
+    t.className = 'tile';
 
     var ic = document.createElement('div'); ic.className = 'ic';
     var ltr = document.createElement('div'); ltr.className = 'ltr';
@@ -134,10 +134,11 @@
     var label = document.createElement('div');
     label.className = 'tile-name';
     label.textContent = l.name;
-    t.appendChild(label);
+    wrap.appendChild(t);
+    wrap.appendChild(label);
 
-    t.onclick = function () { setFocus(i, false); openLink(l); };
-    return t;
+    wrap.onclick = function () { setFocus(i, false); openLink(l); };
+    return wrap;
   }
 
   function render() {
@@ -150,9 +151,9 @@
 
   function setFocus(i, scroll) {
     if (!tiles.length) return;
-    if (tiles[idx]) tiles[idx].className = tiles[idx].className.replace(' focus', '');
+    if (tiles[idx]) tiles[idx].querySelector('.tile').className = tiles[idx].querySelector('.tile').className.replace(' focus', '');
     idx = i;
-    tiles[idx].className += ' focus';
+    tiles[idx].querySelector('.tile').className += ' focus';
     try { sessionStorage.setItem('lh_idx', String(idx)); } catch (e) {}
     if (scroll) {
       var r = tiles[idx].getBoundingClientRect(), g = grid.getBoundingClientRect();
