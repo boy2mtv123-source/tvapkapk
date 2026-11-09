@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
@@ -13,6 +14,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.ImageView
@@ -29,13 +31,16 @@ import java.net.URL
 private const val LIST_URL =
     "https://raw.githubusercontent.com/boy2mtv123-source/tvapkapk/main/links.json"
 
+private const val UA =
+    "Mozilla/5.0 (Linux; Android 11; TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+
 private val LIME = 0xFFC6F135.toInt()
 private val MUTED = 0xFFC8C8C8.toInt()
 private const val DIM = 0x4D000000
 private const val COLS = 5
 
 class MainActivity : Activity() {
-    data class Link(val name: String, val url: String)
+    data class Link(val name: String, val url: String, val imgsrc: String)
 
     private var links: List<Link> = emptyList()
     private lateinit var grid: GridLayout
@@ -123,9 +128,17 @@ class MainActivity : Activity() {
         val out = mutableListOf<Link>()
         val a = JSONArray(text)
         for (i in 0 until a.length()) {
-            val o = a.getJSONObject(i)
+            val o = a.optJSONObject(i) ?: continue
             val u = o.optString("url").trim()
-            if (u.isNotEmpty()) out.add(Link(o.optString("name").trim().ifEmpty { u }, u))
+            if (u.isNotEmpty()) {
+                out.add(
+                    Link(
+                        o.optString("name").trim().ifEmpty { u },
+                        u,
+                        o.optString("imgsrc").trim()
+                    )
+                )
+            }
         }
         return out
     }
@@ -140,9 +153,9 @@ class MainActivity : Activity() {
             }
         }
         return listOf(
-            Link("YouTube", "youtube.com"),
-            Link("Google", "google.com"),
-            Link("Wikipedia", "wikipedia.org")
+            Link("YouTube", "youtube.com", ""),
+            Link("Google", "google.com", ""),
+            Link("Wikipedia", "wikipedia.org", "")
         )
     }
 
@@ -163,51 +176,106 @@ class MainActivity : Activity() {
 
     private fun render(focus: Int) {
         grid.removeAllViews()
-        for (i in links.indices) {
-            val l = links[i]
-            grid.addView(tile(l.name.take(1).uppercase(), l.name, l.url, { open(l) }, { openInApp(l) }))
+        for (l in links) {
+            grid.addView(tile(l, { open(l) }, { openInApp(l) }))
         }
         grid.getChildAt(focus.coerceIn(0, grid.childCount - 1))?.requestFocus()
     }
 
-    private fun tile(
-        icon: String, label: String, url: String,
-        click: () -> Unit, longClick: () -> Unit
-    ): View {
-        val t = LinearLayout(this)
-        t.orientation = LinearLayout.VERTICAL
-        t.gravity = Gravity.CENTER
+    private fun tile(l: Link, click: () -> Unit, longClick: () -> Unit): View {
+        val poster = l.imgsrc.isNotEmpty()
+
+        val t = FrameLayout(this)
         t.isFocusable = true
         t.isClickable = true
         t.background = tileBg()
+        t.contentDescription = l.name
         t.setOnClickListener { click() }
         t.setOnLongClickListener { longClick(); true }
 
+        // Site icon (or first letter) in the middle. Also the placeholder for posters.
         val box = FrameLayout(this)
         val letter = TextView(this)
-        letter.text = icon
+        letter.text = l.name.take(1).uppercase()
         letter.textSize = 40f
         letter.setTextColor(LIME)
         letter.typeface = Typeface.DEFAULT_BOLD
         letter.gravity = Gravity.CENTER
         box.addView(letter, FrameLayout.LayoutParams(-1, -1))
 
-        val img = ImageView(this)
-        img.visibility = View.GONE
-        img.setPadding(dp(6), dp(6), dp(6), dp(6))
-        img.background = shape(0xFFF2F2F2.toInt(), 0x00000000, 0, 10)
-        box.addView(img, FrameLayout.LayoutParams(-1, -1))
+        val icon = ImageView(this)
+        icon.visibility = View.GONE
+        icon.setPadding(dp(6), dp(6), dp(6), dp(6))
+        icon.background = shape(0xFFF2F2F2.toInt(), 0x00000000, 0, 10)
+        box.addView(icon, FrameLayout.LayoutParams(-1, -1))
 
-        t.addView(box, LinearLayout.LayoutParams(dp(56), dp(56)))
-        t.contentDescription = label
-        loadFavicon(url, img, letter)
+        t.addView(box, FrameLayout.LayoutParams(dp(56), dp(56), Gravity.CENTER))
+        loadFavicon(l.url, icon, letter)
+
+        // Optional 3:4 poster image on top.
+        if (poster) {
+            val p = ImageView(this)
+            p.scaleType = ImageView.ScaleType.CENTER_CROP
+            p.visibility = View.GONE
+            p.outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: Outline) {
+                    outline.setRoundRect(0, 0, view.width, view.height, dp(10).toFloat())
+                }
+            }
+            p.clipToOutline = true
+            val pl = FrameLayout.LayoutParams(-1, -1)
+            pl.setMargins(dp(3), dp(3), dp(3), dp(3))
+            t.addView(p, pl)
+            loadPoster(l.imgsrc, p)
+        }
 
         val lp = GridLayout.LayoutParams()
-        lp.width = dp(150)
-        lp.height = dp(100)
+        lp.width = dp(if (poster) 120 else 150)
+        lp.height = dp(if (poster) 160 else 100)
         lp.setMargins(dp(8), dp(8), dp(8), dp(8))
+        lp.setGravity(Gravity.TOP)
         t.layoutParams = lp
         return t
+    }
+
+    private fun decodeScaled(b: ByteArray, w: Int, h: Int): Bitmap? {
+        val o = BitmapFactory.Options()
+        o.inJustDecodeBounds = true
+        BitmapFactory.decodeByteArray(b, 0, b.size, o)
+        if (o.outWidth <= 0 || o.outHeight <= 0) return null
+        var s = 1
+        while (o.outWidth / (s * 2) >= w && o.outHeight / (s * 2) >= h) s *= 2
+        val o2 = BitmapFactory.Options()
+        o2.inSampleSize = s
+        return BitmapFactory.decodeByteArray(b, 0, b.size, o2)
+    }
+
+    private fun loadPoster(src: String, img: ImageView) {
+        val f = File(filesDir, "img_" + Integer.toHexString(src.hashCode()) + ".bin")
+
+        fun show(bmp: Bitmap) {
+            img.setImageBitmap(bmp)
+            img.visibility = View.VISIBLE
+        }
+
+        val cached = if (f.exists()) decodeScaled(f.readBytes(), 360, 480) else null
+        if (cached != null) { show(cached); return }
+
+        Thread {
+            try {
+                val c = URL(src).openConnection() as HttpURLConnection
+                c.connectTimeout = 8000
+                c.readTimeout = 12000
+                c.setRequestProperty("User-Agent", UA)
+                val bytes = c.inputStream.use { it.readBytes() }
+                val bmp = decodeScaled(bytes, 360, 480)
+                if (bmp != null) {
+                    f.writeBytes(bytes)
+                    runOnUiThread { show(bmp) }
+                }
+            } catch (e: Exception) {
+            }
+        }.start()
     }
 
     private fun loadFavicon(url: String, img: ImageView, letter: TextView) {
